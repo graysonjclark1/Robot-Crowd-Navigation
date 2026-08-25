@@ -17,6 +17,8 @@ The crosswalk and intersection videos are 1920x1080 and the mall video is 1280x7
 AI Statement:
 We used AI to help us understand the simulator codebase, write annotation scripts, and incorporate annotation data in the simulation environment. 
 
+The rest of the README stems from the original work.
+
 # GenSafeNav
 This is the codebase for the paper: _[Towards Generalizable Safety in Crowd Navigation via Conformal Uncertainty Handling](https://arxiv.org/abs/2508.05634v1)_.
 
