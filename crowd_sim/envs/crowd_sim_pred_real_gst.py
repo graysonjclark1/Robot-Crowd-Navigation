@@ -27,6 +27,10 @@ class CrowdSimPredRealGST(CrowdSimPred):
         self.gst_out_traj = None
 
     def reset(self, **kwargs):
+        # print("reseting")
+        if self.annotation_data is not None:
+            print("reset annontaion pointer")
+            self.annotation_pointer = 0
         ob = super().reset(**kwargs)
         return ob
         
@@ -202,6 +206,7 @@ class CrowdSimPredRealGST(CrowdSimPred):
 
     # reset = True: reset calls this function; reset = False: step calls this function
     def generate_ob(self, reset, sort=False):
+        # print("generating obs")
         """Generate observation for reset and step functions"""
         # since gst pred model needs ID tracking, don't sort all humans
         # inherit from crowd_sim_lstm, not crowd_sim_pred to avoid computation of true pred!

@@ -45,6 +45,7 @@ def evaluate(actor_critic, eval_envs, num_processes, device, test_size, logging,
         baseEnv = eval_envs.venv.envs[0].env
     else:
         baseEnv = eval_envs.venv.unwrapped.envs[0].env
+        
     time_limit = baseEnv.time_limit
 
     # start the testing episodes
@@ -176,22 +177,29 @@ def evaluate(actor_critic, eval_envs, num_processes, device, test_size, logging,
     logging.info('Collision cases: ' + ' '.join([str(x) for x in collision_cases]))
     logging.info('Timeout cases: ' + ' '.join([str(x) for x in timeout_cases]))
     
-    file_path = os.path.join(model_dir, 'test', 'evaluation_data.csv')
-    with open(file_path, 'w', newline='') as file:
+    file_path = os.path.join(model_dir, 'eval', 'evaluation_data_2.csv')
+    print(file_path)
+    with open(file_path, 'a', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(['Success Times', 'Collision Times', 'Timeout Times', 'Path Length', 'Min Distance'])
+        writer.writerow(['Success Rate', 'Collision Rate', 'Timeout Rate', 'Avg Nav Time', 'Mean Min Distance'])
         
         # Determine the maximum length of the lists
         max_length = max(len(success_times), len(collision_times), len(timeout_times), len(all_path_len), len(min_dist))
         
         # Write data to CSV, handling missing values directly
-        for i in range(max_length):
+        # 1 was max_length
+        for i in range(1):
             row = [
-                success_times[i] if i < len(success_times) else '',
-                collision_times[i] if i < len(collision_times) else '',
-                timeout_times[i] if i < len(timeout_times) else '',
-                all_path_len[i] if i < len(all_path_len) else '',
-                min_dist[i] if i < len(min_dist) else ''
+                # success_times[i] if i < len(success_times) else '',
+                # collision_times[i] if i < len(collision_times) else '',
+                # timeout_times[i] if i < len(timeout_times) else '',
+                # all_path_len[i] if i < len(all_path_len) else '',
+                # min_dist[i] if i < len(min_dist) else ''
+                success_rate,
+                collision_rate,
+                timeout_rate, 
+                avg_nav_time,
+                np.mean(min_dist)
             ]
             writer.writerow(row)
     eval_envs.close()

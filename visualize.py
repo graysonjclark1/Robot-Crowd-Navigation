@@ -55,6 +55,7 @@ def main():
 
     
     model_dir_string = model_dir_temp.replace('/', '.') + '.configs.config'
+    print(model_dir_string)
     model_arguments = import_module(model_dir_string)
     Config = getattr(model_arguments, 'Config')
     env_config = config = Config()
@@ -139,6 +140,19 @@ def main():
     envs = make_vec_envs(env_name, current_seed, 1,
                          algo_args.gamma, eval_dir, device, allow_early_resets=True,
                          config=env_config, ax=ax, test_case=test_args.test_case, pretext_wrapper=config.env.use_wrapper)
+    
+    annotation_path = "extract_data/mall_crowd_annotations_interpolated.json"
+    # if the vec env exposes env_method (common in wrapped/vectorized envs)
+    if hasattr(envs, "env_method"):
+        envs.env_method("load_annotation_json", annotation_path)
+        print("here1")
+    # fallback for simpler wrappers
+    elif hasattr(envs, "venv") and hasattr(envs.venv, "envs"):
+        envs.venv.envs[0].load_annotation_json(annotation_path)
+        print("here2")
+    else:
+        envs.load_annotation_json(annotation_path)
+        print("here3")
 
     if config.robot.policy not in ['orca', 'social_force']:
         # load the policy weights
@@ -156,7 +170,8 @@ def main():
     else:
         actor_critic = None
 
-    test_size = config.env.test_size
+    #test_size = config.env.test_size
+    test_size = 3
     
     content = MODEL_NAME
     save_path = os.path.join("visualizations", content)

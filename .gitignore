@@ -1,1 +1,30 @@
+# Weights & Biases logs
+wandb/
+
+# Python
+__pycache__/
+*.pyc
+*.py[cod]
+.venv/
+venv/
+
+# IDE / OS
+.vscode/
+.idea/
 .DS_Store
+
+# Large/generated files
+*.pt
+*.pth
+*.ckpt
+*.mp4
+
+# Generated visualizations
+visualizations/new/
+
+# Logs
+*.log
+
+# Experiment output
+logs/
+checkpoints/

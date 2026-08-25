@@ -103,6 +103,7 @@ class CrowdSimPred(CrowdSimVarNum):
         step function
         Compute actions for all agents, detect collision, update environment and return (ob, reward, done, info)
         """
+        # print("stepping")
         if self.collect_failure_samples:
             self.store_predictions_to_humans()
             self.store_locations_to_robot()
@@ -135,19 +136,44 @@ class CrowdSimPred(CrowdSimVarNum):
 
 
 
-        human_actions = self.get_human_actions()
+        # human_actions = self.get_human_actions()
+
+        # # need to update self.human_future_traj in testing to calculate number of intrusions
+        # if self.phase == 'test':
+        #     # use ground truth future positions of humans
+        #     self.calc_human_future_traj(method='truth')
+
+        # # compute reward and episode info
+        # reward, done, episode_info = self.calc_reward(action, danger_zone='future')
+
+
+        # if self.record:
+
+        #     self.episodeRecoder.actionList.append(list(action))
+        #     self.episodeRecoder.positionList.append([self.robot.px, self.robot.py])
+        #     self.episodeRecoder.orientationList.append(self.robot.theta)
+
+        #     if done:
+        #         self.episodeRecoder.robot_goal.append([self.robot.gx, self.robot.gy])
+        #         self.episodeRecoder.saveEpisode(self.case_counter['test'])
+
+        # # apply action and update all agents
+        # self.robot.step(action)
+        # for i, human_action in enumerate(human_actions):
+        #     self.humans[i].step(human_action)
+        #    self.cur_human_states[i] = np.array([self.humans[i].px, self.humans[i].py, self.humans[i].radius])
+        if self.annotation_data is None:
+            human_actions = self.get_human_actions()
+        else:
+            human_actions = None
 
         # need to update self.human_future_traj in testing to calculate number of intrusions
-        if self.phase == 'test':
-            # use ground truth future positions of humans
+        if self.phase == 'test' and self.annotation_data is None:
             self.calc_human_future_traj(method='truth')
 
-        # compute reward and episode info
         reward, done, episode_info = self.calc_reward(action, danger_zone='future')
 
-
         if self.record:
-
             self.episodeRecoder.actionList.append(list(action))
             self.episodeRecoder.positionList.append([self.robot.px, self.robot.py])
             self.episodeRecoder.orientationList.append(self.robot.theta)
@@ -156,11 +182,18 @@ class CrowdSimPred(CrowdSimVarNum):
                 self.episodeRecoder.robot_goal.append([self.robot.gx, self.robot.gy])
                 self.episodeRecoder.saveEpisode(self.case_counter['test'])
 
-        # apply action and update all agents
         self.robot.step(action)
-        for i, human_action in enumerate(human_actions):
-            self.humans[i].step(human_action)
-            self.cur_human_states[i] = np.array([self.humans[i].px, self.humans[i].py, self.humans[i].radius])
+
+        if self.annotation_data is None:
+            for i, human_action in enumerate(human_actions):
+                self.humans[i].step(human_action)
+                self.cur_human_states[i] = np.array([self.humans[i].px, self.humans[i].py, self.humans[i].radius])
+        else:
+            self.apply_next_annotation_frame(reset=False)
+            for i in range(len(self.humans)):
+                self.cur_human_states[i] = np.array([self.humans[i].px, self.humans[i].py, self.humans[i].radius])
+                
+
 
         self.global_time += self.time_step # max episode length=time_limit/time_step
         self.step_counter = self.step_counter+1
@@ -206,12 +239,12 @@ class CrowdSimPred(CrowdSimVarNum):
 
 
         # Update all humans' goals randomly midway through episode
-        if self.random_goal_changing:
+        if self.random_goal_changing and self.annotation_data is None:
             if self.global_time % 5 == 0:
                 self.update_human_goals_randomly()
 
         # Update a specific human's goal once its reached its original goal
-        if self.end_goal_changing and not self.record:
+        if self.end_goal_changing and not self.record and self.annotation_data is None:
             for i, human in enumerate(self.humans):
                 if norm((human.gx - human.px, human.gy - human.py)) < human.radius:
                     self.humans[i] = self.generate_circle_crossing_human()

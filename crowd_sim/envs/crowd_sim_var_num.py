@@ -34,6 +34,7 @@ class CrowdSimVarNum(CrowdSim):
         humans are controlled by a unknown and fixed policy.
         robot is controlled by a known and learnable policy.
         """
+        print("Hello from CSVN")
         super().__init__()
         self.id_counter = None
         self.observed_human_ids = None
@@ -434,11 +435,17 @@ class CrowdSimVarNum(CrowdSim):
             min_danger_dist = 0
         else:
             # if the robot collides with future states, give it a collision penalty
-            relative_pos = self.human_future_traj[1:, :, :2] - np.array([self.robot.px, self.robot.py])
+            human_positions = np.array([[h.px, h.py] for h in self.humans])
+            #relative_pos = self.human_future_traj[1:, :, :2] - np.array([self.robot.px, self.robot.py])
+            relative_pos = human_positions - np.array([self.robot.px, self.robot.py])
             relative_dist = np.linalg.norm(relative_pos, axis=-1)
 
             collision_idx = relative_dist < self.robot.radius + self.config.humans.radius  # [predict_steps, human_num]
-
+            print("robot:", self.robot.px, self.robot.py)
+            print("human_positions:", human_positions)
+            print("relative_dist:", relative_dist)
+            print("threshold:", self.robot.radius + self.config.humans.radius)
+            print("collision_idx:", collision_idx)
             danger_cond = np.any(collision_idx)
             # if robot is dangerously close to any human, calculate the min distance between robot and its closest human
             if danger_cond:
@@ -524,28 +531,78 @@ class CrowdSimVarNum(CrowdSim):
         filenames = glob.glob(all_pic_filenames)
         filenames.sort()
 
+        if len(filenames) == 0:
+            print(f"No PNG frames found in {save_path}. Skipping animation.")
+            return
+
         images = []
-        for filename in filenames:
-            image = imageio.imread(filename)
+        bad_files = []
+
+        for frame_file in filenames:
+            if not os.path.exists(frame_file):
+                print(f"Skipping missing frame: {frame_file}")
+                bad_files.append(frame_file)
+                continue
+
+            if os.path.getsize(frame_file) == 0:
+                print(f"Skipping empty frame: {frame_file}")
+                bad_files.append(frame_file)
+                continue
+
+            try:
+                image = imageio.imread(frame_file)
+            except Exception as e:
+                print(f"Skipping unreadable frame {frame_file}: {e}")
+                bad_files.append(frame_file)
+                continue
+
             if image.ndim == 2:
                 image = np.stack([image] * 3, axis=-1)
-            elif image.shape[2] == 4:
+            elif image.ndim == 3 and image.shape[2] == 4:
                 image = image[:, :, :3]
-            elif image.shape[2] != 3:
-                raise ValueError(f"Unexpected image shape: {image.shape}")
+            elif image.ndim == 3 and image.shape[2] == 3:
+                pass
+            else:
+                print(f"Skipping frame with unexpected shape {image.shape}: {frame_file}")
+                bad_files.append(frame_file)
+                continue
 
             height, width = image.shape[:2]
             new_height = (height + 15) // 16 * 16
             new_width = (width + 15) // 16 * 16
-            image = np.pad(image, ((0, new_height - height), (0, new_width - width), (0, 0)), mode='constant')
+            image = np.pad(
+                image,
+                ((0, new_height - height), (0, new_width - width), (0, 0)),
+                mode="constant"
+            )
 
             images.append(image)
-            os.remove(filename)
 
-        writer = imageio.get_writer(generated_mp4_filename, fps=10, codec='libx264')
-        for image in images:
-            writer.append_data(image)
-        writer.close()
+        if len(images) == 0:
+            print(f"No valid frames could be read from {save_path}.")
+            if bad_files:
+                print("Bad frame files:")
+                for bf in bad_files:
+                    print(f"  {bf}")
+            return
+
+        writer = imageio.get_writer(generated_mp4_filename, fps=10, codec="libx264")
+        try:
+            for image in images:
+                writer.append_data(image)
+        finally:
+            writer.close()
+
+        # only remove files after successful video creation attempt
+        for frame_file in filenames:
+            if os.path.exists(frame_file):
+                os.remove(frame_file)
+
+        print(f"Saved animation to: {generated_mp4_filename}")
+        if bad_files:
+            print("Skipped bad frame files:")
+            for bf in bad_files:
+                print(f"  {bf}")
 
 
     def plot_step(self, save_path):

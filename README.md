@@ -1,3 +1,22 @@
+# Comp 781 Final Project
+This is the codebase for the paper that we use  _[Towards Generalizable Safety in Crowd Navigation via Conformal Uncertainty Handling](https://arxiv.org/abs/2508.05634v1)_. The general directions can be read below for setting up the simulation environment. In this project, we expanded initial testing of this simulation environment and then simulated real world data in the simulator. For the first task, we used custom_tests.py for testing results and custom_visualize.py for visualizations. For the second task, we added the directory "extract_data" to the codebase. This contains the videos that we extracted data from and our annotation scripts. 
+
+We also edited the codebase simulation environment to support the real world data annotations, which can be found in envs/crowd_sim.py. The generate_ob function was updated in envs/crowd_sim_pred_real_gst.py and step function in crowd_sim_pred.py. 
+
+To reproduce our analysis for the second part, these are the steps:
+
+1) Replace annotation path in custom_tests.py/visualize.py with path to annotation file. These
+paths are `["extract_data\ec_shoulder_annotations_interpolated.json", "extract_data\mall_crowd_annotations_interpolated.json", "extract_data\people_walking_annotations_interpolated.json"]`.
+Shoulder annotations corresponds to the crosswalk video, people_walking corresponds to the intersection environment, and mall_crowd refers to the mall video. 
+
+2) Edit the pixel mapping function in crowd_sim.py, `_pixel_center_to_env_position(self, center_xy)`. 
+The crosswalk and intersection videos are 1920x1080 and the mall video is 1280x720. Update the values of `img_w` and `img_h` accordingly.
+
+3) Run the visualize.py or custom_tests.py file
+
+AI Statement:
+We used AI to help us understand the simulator codebase, write annotation scripts, and incorporate annotation data in the simulation environment. 
+
 # GenSafeNav
 This is the codebase for the paper: _[Towards Generalizable Safety in Crowd Navigation via Conformal Uncertainty Handling](https://arxiv.org/abs/2508.05634v1)_.
 

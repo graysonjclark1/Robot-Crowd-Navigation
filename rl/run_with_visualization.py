@@ -43,6 +43,11 @@ def run_with_visualization(actor_critic, eval_envs, num_processes, device, test_
         baseEnv = eval_envs.venv.envs[0].env
     else:
         baseEnv = eval_envs.venv.unwrapped.envs[0].env
+
+    print(baseEnv)
+
+
+
     time_limit = baseEnv.time_limit
 
     # start the testing episodes

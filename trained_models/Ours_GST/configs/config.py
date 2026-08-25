@@ -46,7 +46,8 @@ class Config(object):
 
 
     env.randomize_attributes = True
-    env.time_limit = 50
+    # Was 50
+    env.time_limit = 250
     env.time_step = 0.25    
     # record robot states and actions an episode
     #       for system identification in sim2real
@@ -73,7 +74,7 @@ class Config(object):
     sim = BaseConfig()
     sim.circle_radius = 6 * np.sqrt(2)
     sim.arena_size = 6
-    sim.human_num = 20
+    sim.human_num = 67
     # actual human num in each timestep, in [human_num-human_num_range, human_num+human_num_range]
     sim.human_num_range = 0
     sim.predict_steps = 5  # yjp mark: prediction horizon (steps)
@@ -133,7 +134,7 @@ class Config(object):
     robot.visible = False 
     robot.policy = 'selfAttn_merge_srnn'
     robot.radius = 0.3
-    robot.v_pref = 1
+    robot.v_pref = 0.5
     robot.sensor = "coordinates"
     # FOV = this values * PI
     robot.FOV = 2
@@ -185,7 +186,7 @@ class Config(object):
     # config for sim2real
     sim2real = BaseConfig()
     # use dummy robot and human states or not
-    sim2real.use_dummy_detect = True
+    sim2real.use_dummy_detect = False
     sim2real.record = False
     sim2real.load_act = False
     sim2real.ROSStepInterval = 0.03
@@ -196,3 +197,4 @@ class Config(object):
         raise ValueError("If using inferred prediction, you must wrap the envs!")
     if sim.predict_method != 'inferred' and env.use_wrapper:
         raise ValueError("If not using inferred prediction, you must NOT wrap the envs!")
+

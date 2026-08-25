@@ -5,6 +5,7 @@ import rvo2
 import random
 import copy
 import os
+import json
 
 from numpy.linalg import norm
 from crowd_sim.envs.utils.human import Human
@@ -199,6 +200,18 @@ class CrowdSim(gym.Env):
                 self.episodeRecoder.loadActions()
         # use dummy robot and human states or use detected states from sensors
         self.use_dummy_detect = config.sim2real.use_dummy_detect
+        # New
+        self.annotation_data = None
+        self.annotation_frames = []
+        self.annotation_frame_lookup = {}
+        self.annotation_pointer = 0
+        self.annotation_person_ids = []
+        self.annotation_id_to_slot = {}
+        self.annotation_last_known = {}
+        self.annotation_frame_step = 1
+        self.annotation_fps = None
+        self.annotation_offscreen_x = 15.0
+        self.annotation_offscreen_y = 15.0
 
 
 
@@ -209,21 +222,242 @@ class CrowdSim(gym.Env):
         # set robot for this envs
         rob_RL = Robot(config, 'robot')
         self.set_robot(rob_RL)
+    
+    def load_annotation_json(self, json_path):
+        """
+        Load the exported shoulder annotation JSON.
+        """
+        # print("inside annoations")
 
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        self.annotation_data = data
+        self.annotation_frames = sorted(data["frames"], key=lambda fr: fr["frame_index"])
+        self.annotation_frame_lookup = {fr["frame_index"]: fr for fr in self.annotation_frames}
+        self.annotation_pointer = 0
+        self.annotation_frame_step = data.get("frame_step", 1)
+        self.annotation_fps = data.get("fps", None)
+
+        person_ids = set()
+        for frame in self.annotation_frames:
+            for person in frame.get("persons", []):
+                person_ids.add(int(person["person_id"]))
+
+        self.annotation_person_ids = sorted(person_ids)
+        self.annotation_id_to_slot = {
+            pid: idx for idx, pid in enumerate(self.annotation_person_ids)
+        }
+
+        self.annotation_last_known = {}
+        for pid in self.annotation_person_ids:
+            self.annotation_last_known[pid] = {
+                "present": False,
+                "px": self.annotation_offscreen_x,
+                "py": self.annotation_offscreen_y,
+                "vx": 0.0,
+                "vy": 0.0,
+                "frame_index": None,
+                "timestamp_sec": None,
+            }
+
+        self.human_num = len(self.annotation_person_ids)
+        # print(self.human_num)
+    
+    def _pixel_center_to_env_position(self, center_xy):
+        """
+        Convert image pixel center -> env position.
+        Placeholder mapping only.
+        """
+        cx, cy = center_xy
+        #img_w = 1920.0
+        img_w = 1280.0
+        #img_h = 1080.0
+        img_h = 720.0
+        arena_size = 6
+        spacing_factor = 1.4
+
+        # / 100
+        # x = (float(cx) - img_w / 2.0) / 100.0
+        # y = (img_h / 2.0 - float(cy)) / 100.0
+        x = ((cx / img_w) - 0.5)*2*arena_size*spacing_factor
+        y = -((cy/img_h) - 0.5)*2*arena_size*spacing_factor
+
+        return x, y
+    
+    def _set_human_offscreen(self, slot_idx):
+        # print(slot_idx, len(self.humans))
+        # print(slot_idx < len(self.humans))
+        human = self.humans[slot_idx]
+        ox = self.annotation_offscreen_x
+        oy = self.annotation_offscreen_y
+
+        human.set(
+            ox, oy, ox, oy, 0.0, 0.0, 0.0,
+            radius=self.config.humans.radius
+        )
+
+        self.last_human_states[slot_idx, :] = np.array(
+            [ox, oy, 0.0, 0.0, self.config.humans.radius]
+        )
+
+    def _apply_annotation_frame_by_index(self, frame_list_index, reset=False):
+        """
+        Apply one frame from self.annotation_frames to self.humans.
+
+        Rules:
+        - skipped frame: keep last known states as-is
+        - annotated frame: update listed person_ids
+        - missing person_ids on an annotated frame: mark them absent/offscreen
+        """
+        
+        if self.annotation_data is None:
+            return
+
+        if len(self.annotation_frames) == 0:
+            return
+
+        frame_list_index = max(0, min(frame_list_index, len(self.annotation_frames) - 1))
+        frame = self.annotation_frames[frame_list_index]
+        # print(f"[ANNOTATION FRAME] frame = {frame['frame_index']}")
+
+        if frame.get("skipped", False):
+            for pid, slot_idx in self.annotation_id_to_slot.items():
+                state = self.annotation_last_known[pid]
+                if not state["present"]:
+                    self._set_human_offscreen(slot_idx)
+                    continue
+
+                human = self.humans[slot_idx]
+                px = state["px"]
+                py = state["py"]
+                vx = state["vx"]
+                vy = state["vy"]
+
+                human.set(
+                    px, py, px, py, vx, vy, 0.0,
+                    radius=self.config.humans.radius
+                )
+                self.last_human_states[slot_idx, :] = np.array(
+                    [px, py, vx, vy, self.config.humans.radius]
+                )
+            return
+
+        timestamp_sec = frame.get("timestamp_sec", None)
+
+        current_present_ids = set()
+        persons = frame.get("persons", [])
+
+        for person in persons:
+            pid = int(person["person_id"])
+            if pid not in self.annotation_id_to_slot:
+                continue
+
+            slot_idx = self.annotation_id_to_slot[pid]
+            current_present_ids.add(pid)
+
+            center_xy = person["center"]
+            px, py = self._pixel_center_to_env_position(center_xy)
+
+            prev_state = self.annotation_last_known[pid]
+
+            if reset or (not prev_state["present"]) or prev_state["timestamp_sec"] is None or timestamp_sec is None:
+                vx = 0.0
+                vy = 0.0
+            else:
+                dt = float(timestamp_sec) - float(prev_state["timestamp_sec"])
+                if dt <= 1e-8:
+                    vx = 0.0
+                    vy = 0.0
+                else:
+                    vx = (px - prev_state["px"]) / dt
+                    vy = (py - prev_state["py"]) / dt
+
+            human = self.humans[slot_idx]
+            human.set(
+                px, py, px, py, vx, vy, 0.0,
+                radius=self.config.humans.radius
+            )
+
+            self.last_human_states[slot_idx, :] = np.array(
+                [px, py, vx, vy, self.config.humans.radius]
+            )
+
+            self.annotation_last_known[pid] = {
+                "present": True,
+                "px": px,
+                "py": py,
+                "vx": vx,
+                "vy": vy,
+                "frame_index": frame["frame_index"],
+                "timestamp_sec": timestamp_sec,
+            }
+
+        for pid, slot_idx in self.annotation_id_to_slot.items():
+            if pid in current_present_ids:
+                continue
+
+            self.annotation_last_known[pid] = {
+                "present": False,
+                "px": self.annotation_offscreen_x,
+                "py": self.annotation_offscreen_y,
+                "vx": 0.0,
+                "vy": 0.0,
+                "frame_index": frame["frame_index"],
+                "timestamp_sec": timestamp_sec,
+            }
+            self._set_human_offscreen(slot_idx)
+    
+    def apply_next_annotation_frame(self, reset=False):
+        if self.annotation_data is None:
+            return
+
+        self._apply_annotation_frame_by_index(self.annotation_pointer, reset=reset)
+
+        if self.annotation_pointer < len(self.annotation_frames) - 1:
+            self.annotation_pointer += 1
 
     def set_robot(self, robot):
         raise NotImplementedError
 
-
     def generate_random_human_position(self, human_num):
         """
-        Calls generate_circle_crossing_human function to generate a certain number of random humans
-        :param human_num: the total number of humans to be generated
-        :return: None
+        If annotation playback is loaded, initialize fixed human slots from IDs
+        in the annotation file. Otherwise use the original random spawn behavior.
         """
-        # initial min separation distance to avoid danger penalty at beginning
+        print("generate random positions")
+        self.humans = []
+
+        if self.annotation_data is not None:
+            for _ in range(self.human_num):
+                human = Human(self.config, 'humans')
+                human.time_step = self.time_step
+                human.set(
+                    self.annotation_offscreen_x,
+                    self.annotation_offscreen_y,
+                    self.annotation_offscreen_x,
+                    self.annotation_offscreen_y,
+                    0.0, 0.0, 0.0,
+                    radius=self.config.humans.radius
+                )
+                self.humans.append(human)
+
+            self.last_human_states = np.zeros((self.human_num, 5))
+            self.apply_next_annotation_frame(reset=True)
+            return
+
         for i in range(human_num):
             self.humans.append(self.generate_circle_crossing_human())
+        
+    # def generate_random_human_position(self, human_num):
+    #     """
+    #     Calls generate_circle_crossing_human function to generate a certain number of random humans
+    #     :param human_num: the total number of humans to be generated
+    #     :return: None
+    #     """
+    #     # initial min separation distance to avoid danger penalty at beginning
+    #     for i in range(human_num):
+    #         self.humans.append(self.generate_circle_crossing_human())
 
 
     def generate_circle_crossing_human(self):
@@ -629,21 +863,37 @@ class CrowdSim(gym.Env):
         """
         Compute actions for all agents, detect collision, update environment and return (ob, reward, done, info)
         """
-
+        print("stepping")
         # clip the action to obey robot's constraint
         action = self.robot.policy.clip_action(action, self.robot.v_pref)
 
-        human_actions = self.get_human_actions()
+        # human_actions = self.get_human_actions()
 
 
-        # compute reward and episode info
+        # # compute reward and episode info
+        # reward, done, episode_info = self.calc_reward(action)
+
+
+        # # apply action and update all agents
+        # self.robot.step(action)
+        # for i, human_action in enumerate(human_actions):
+        #     self.humans[i].step(human_action)
+
+        if self.annotation_data is None:
+            human_actions = self.get_human_actions()
+        else:
+            human_actions = None
+
         reward, done, episode_info = self.calc_reward(action)
 
-
-        # apply action and update all agents
         self.robot.step(action)
-        for i, human_action in enumerate(human_actions):
-            self.humans[i].step(human_action)
+
+        if self.annotation_data is None:
+            for i, human_action in enumerate(human_actions):
+                self.humans[i].step(human_action)
+        else:
+            self.apply_next_annotation_frame(reset=False)
+        
         self.global_time += self.time_step # max episode length=time_limit/time_step
         self.step_counter=self.step_counter+1
 
